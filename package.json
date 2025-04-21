@@ -1,0 +1,37 @@
+{
+	"name": "random-criterion",
+	"version": "1.0.0",
+	"main": "build/index.js",
+	"scripts": {
+		"dev": "tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node build/src/index.js\"",
+		"build": "tsc",
+		"test": "jest --watch --detectOpenHandles",
+		"deploy": "tsc && serverless deploy --stage dev aws-profile default"
+	},
+	"_moduleAliases": {
+		"@src": "build/src",
+		"@prisma_generated": "build/generated"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"description": "",
+	"devDependencies": {
+		"module-alias": "^2.2.3",
+		"serverless-plugin-typescript": "^2.1.5",
+		"serverless-tscpaths": "^0.0.8",
+		"ts-jest": "^29.3.2",
+		"tsc-watch": "^6.2.1",
+		"typescript": "^5.8.3"
+	},
+	"dependencies": {
+		"@aws-sdk/client-s3": "^3.787.0",
+		"@prisma/client": "^6.6.0",
+		"dayjs": "^1.11.13",
+		"dotenv": "^16.5.0",
+		"jest": "^29.7.0",
+		"p-all": "^5.0.0",
+		"prisma": "^6.6.0",
+		"puppeteer": "^24.6.1"
+	}
+}

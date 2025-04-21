@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ar_internal_metadata {
+  key        String   @id @db.VarChar
+  value      String?  @db.VarChar
+  created_at DateTime @db.Timestamp(6)
+  updated_at DateTime @db.Timestamp(6)
+}
+
+model films {
+  id         BigInt   @id @default(autoincrement())
+  title      String?  @db.VarChar
+  director   String?  @db.VarChar
+  country    String?  @db.VarChar
+  year       Int?
+  link       String?  @db.VarChar
+  img_url    String?  @db.VarChar
+  created_at DateTime @db.Timestamp(6)
+  updated_at DateTime @db.Timestamp(6)
+}
+
+model schema_migrations {
+  version String @id @db.VarChar
+}
