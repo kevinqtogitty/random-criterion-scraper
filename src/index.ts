@@ -109,6 +109,7 @@ async function scrapeFilmData(genres: string[]) {
   });
 
   await pAll(promises, { concurrency: 3 });
+  await browser.close();
 }
 
 async function insertFilms(genres: string[]) {
