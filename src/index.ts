@@ -1,22 +1,15 @@
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import puppeteer, { Browser } from "puppeteer";
 import pAll from "p-all";
+import archiver from "archiver";
 import dayjs from "dayjs";
-import { prisma } from "../prisma/client.js";
+import { prisma } from "prisma/client";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-interface Film {
-  title: string | null;
-  director: string | null;
-  country: string | null;
-  year: number | null;
-  link: string | null;
-  img_url: string | null;
-  genres: string[];
-}
+import { Film, Genre } from "types/films";
 
-const genres = [
+const genres: Genre[] = [
   "action-adventure",
   "animation",
   "avant-garde",
@@ -38,33 +31,28 @@ const genres = [
   "western",
 ];
 
-const steps = {
-  scrape: (genres: string[]) => scrapeFilmData(genres),
-  dropRows: async () => {
-    console.info("Deleting rows");
-    return prisma.films.deleteMany({});
-  },
-  insert: (genres: string[]) => insertFilms(genres),
-  uploadToS3: async () => {},
-  cleanUp: () => {},
-};
+fs.mkdirSync("./data", { recursive: true });
 
-main().then(() => process.exit(0));
+puppeteer.launch().then((browser) => {
+  main(browser)
+    .then(() => browser.close())
+    .then(() => console.log(">>> DONZO"))
+    .then(() => process.exit(0));
+});
 
-async function main() {
-  fs.mkdirSync("./data", { recursive: true });
-  await steps.scrape(["all"]);
-  await steps.dropRows();
-  await steps.insert(["all"]);
-  await steps.scrape(genres);
-  await steps.insert(genres);
-
-  console.log(">>> DONZO");
+async function main(browser: Browser) {
+  await scrape(["all"], browser);
+  await dropRows();
+  await insert(["all"]);
+  await scrape(genres, browser);
+  await insert(genres);
 }
 
-async function scrapeFilmData(genres: string[]) {
-  const browser = await puppeteer.launch();
+async function dropRows() {
+  return prisma.films.deleteMany({});
+}
 
+async function scrape(genres: Array<Genre>, browser: Browser) {
   const promises = genres.map((genre) => async () => {
     console.log(">>> SCRAPING GENRE", genre);
     const page = await browser.newPage();
@@ -109,10 +97,9 @@ async function scrapeFilmData(genres: string[]) {
   });
 
   await pAll(promises, { concurrency: 3 });
-  await browser.close();
 }
 
-async function insertFilms(genres: string[]) {
+async function insert(genres: Array<Genre>) {
   for (const genre of genres) {
     console.log(">>> INSERTING GENRE", genre);
 
@@ -146,7 +133,7 @@ async function insertFilms(genres: string[]) {
   }
 }
 
-// scrapeFilmData()
+// scrape()
 //   .then((data) => {
 //     fs.writeFileSync("./data/filmData.json", JSON.stringify(data, null, 2));
 //     console.log(">>> Done Scraping!");
