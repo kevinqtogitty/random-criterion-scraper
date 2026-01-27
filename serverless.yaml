@@ -14,7 +14,7 @@
 service: random-criterion
 useDotenv: true
 
-frameworkVersion: '3'
+frameworkVersion: "3"
 
 plugins:
   - serverless-plugin-typescript
@@ -23,7 +23,7 @@ plugins:
 provider:
   name: aws
   runtime: nodejs18.x
-  region: 'us-east-1'
+  region: "us-east-1"
   environment:
     stage: ${env:STAGE}
 
