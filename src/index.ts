@@ -2,11 +2,11 @@ import fs from "fs";
 import path from "path";
 import puppeteer, { Browser } from "puppeteer";
 import pAll from "p-all";
-import archiver from "archiver";
+import os from "os";
+import crypto from "crypto";
 import dayjs from "dayjs";
-import { prisma } from "prisma/client";
+import { prisma } from "../prisma/client";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-
 import { Film, Genre } from "types/films";
 
 const genres: Genre[] = [
@@ -31,28 +31,37 @@ const genres: Genre[] = [
   "western",
 ];
 
-fs.mkdirSync("./data", { recursive: true });
+const runId = crypto.randomUUID();
+const tmpDir = path.join(os.tmpdir(), "random-criterion", runId);
+fs.mkdirSync(tmpDir, { recursive: true });
 
-puppeteer.launch().then((browser) => {
-  main(browser)
-    .then(() => browser.close())
-    .then(() => console.log(">>> DONZO"))
-    .then(() => process.exit(0));
+const s3Client = new S3Client({
+  region: "us-east-1",
 });
+let browser: Browser;
 
-async function main(browser: Browser) {
-  await scrape(["all"], browser);
-  await dropRows();
-  await insert(["all"]);
-  await scrape(genres, browser);
-  await insert(genres);
-}
+puppeteer.launch().then(async (pBrowser) => {
+  browser = pBrowser;
+  try {
+    await scrape(["all"]);
+    await dropRows();
+    await insert(["all"]);
+    await scrape(genres);
+    await insert(genres);
+    await browser.close();
+    await uploadJsonFilesToS3();
+  } finally {
+    s3Client.destroy();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    process.exit(0);
+  }
+});
 
 async function dropRows() {
   return prisma.films.deleteMany({});
 }
 
-async function scrape(genres: Array<Genre>, browser: Browser) {
+async function scrape(genres: Array<Genre>) {
   const promises = genres.map((genre) => async () => {
     console.log(">>> SCRAPING GENRE", genre);
     const page = await browser.newPage();
@@ -93,7 +102,10 @@ async function scrape(genres: Array<Genre>, browser: Browser) {
       }));
     });
 
-    fs.writeFileSync(`./data/${genre}.json`, JSON.stringify(filmInfo, null, 2));
+    fs.writeFileSync(
+      `${tmpDir}/${genre}.json`,
+      JSON.stringify(filmInfo, null, 2),
+    );
   });
 
   await pAll(promises, { concurrency: 3 });
@@ -104,13 +116,16 @@ async function insert(genres: Array<Genre>) {
     console.log(">>> INSERTING GENRE", genre);
 
     const fileData = fs.readFileSync(
-      path.join("./data", `${genre}.json`),
+      path.join(tmpDir, `${genre}.json`),
       "utf-8",
     );
     const parsed: Film[] = await JSON.parse(fileData);
 
     for (const film of parsed) {
       await prisma.films.upsert({
+        where: {
+          title: film.title || "",
+        },
         create: {
           title: film.title,
           director: film.director,
@@ -119,17 +134,49 @@ async function insert(genres: Array<Genre>) {
           link: film.link,
           img_url: film.img_url,
           genre: genre === "all" ? [] : [genre],
+          scrape_run_id: runId,
         },
         update: {
           genre: {
             push: genre,
           },
-        },
-        where: {
-          title: film.title || "",
+          scrape_run_id: runId,
         },
       });
     }
+  }
+
+  await prisma.films.deleteMany({
+    where: {
+      scrape_run_id: {
+        not: runId,
+      },
+    },
+  });
+}
+
+/* Happy-path: upload each JSON file in ./data to S3 under a date/runId prefix */
+async function uploadJsonFilesToS3() {
+  const files = fs.readdirSync(tmpDir);
+  const date = dayjs().format("YYYY-MM-DD");
+
+  for (const fileName of files) {
+    if (!fileName.endsWith(".json")) continue;
+    const filePath = path.join(tmpDir, fileName);
+    const fileBody = fs.readFileSync(filePath);
+
+    const key = `archives/${date}/${runId}/${fileName}`;
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: "random-criterion",
+        Key: key,
+        Body: fileBody,
+        ContentType: "application/json",
+      }),
+    );
+
+    console.log(`>>> Uploaded ${fileName} to s3://random-criterion/${key}`);
   }
 }
 

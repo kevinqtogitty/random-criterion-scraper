@@ -2,8 +2,7 @@
   "name": "random-criterion",
   "version": "1.0.0",
   "main": "build/index.js",
-  "type": "module",
-  "module": "CommonJS",
+  "type": "commonjs",
   "scripts": {
     "dev": "tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node build/src/index.js\"",
     "scrape": "npm run build && node --require tsconfig-paths/register build/src/index.js",
@@ -14,6 +13,7 @@
   "_moduleAliases": {
     "@src": "build/src",
     "@prisma_generated": "build/generated",
+    "@prisma_client": "build/prisma/client",
     "@prisma": "build/prisma",
     "@types": "build/types"
   },
@@ -38,7 +38,6 @@
     "@aws-sdk/client-s3": "^3.787.0",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
-    "archiver": "^7.0.1",
     "dayjs": "^1.11.13",
     "dotenv": "^16.6.1",
     "jest": "^29.7.0",
