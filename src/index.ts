@@ -10,6 +10,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Film, Genre } from "types/films";
 
 const genres: Genre[] = [
+  "all",
   "action-adventure",
   "animation",
   "avant-garde",
@@ -43,10 +44,8 @@ let browser: Browser;
 puppeteer.launch().then(async (pBrowser) => {
   browser = pBrowser;
   try {
-    await scrape(["all"]);
-    await dropRows();
-    await insert(["all"]);
     await scrape(genres);
+    await dropRows();
     await insert(genres);
     await browser.close();
     await uploadJsonFilesToS3();
@@ -122,6 +121,8 @@ async function insert(genres: Array<Genre>) {
     const parsed: Film[] = await JSON.parse(fileData);
 
     for (const film of parsed) {
+      // Match on unique title
+      // If it doesnt exist create it with the run ID
       await prisma.films.upsert({
         where: {
           title: film.title || "",
@@ -133,9 +134,11 @@ async function insert(genres: Array<Genre>) {
           year: film.year,
           link: film.link,
           img_url: film.img_url,
-          genre: genre === "all" ? [] : [genre],
+          genre: [], // We always insert all films first, so initialize an empty array
           scrape_run_id: runId,
         },
+        // Then for each genre file when we see the film again we just need to update the genre
+        // And also tag the run ID in case
         update: {
           genre: {
             push: genre,
@@ -146,6 +149,7 @@ async function insert(genres: Array<Genre>) {
     }
   }
 
+  // Delete all films that did not show up in the latest scrape (movies were removed from the Criterion Channel between scrapes)
   await prisma.films.deleteMany({
     where: {
       scrape_run_id: {
@@ -155,7 +159,6 @@ async function insert(genres: Array<Genre>) {
   });
 }
 
-/* Happy-path: upload each JSON file in ./data to S3 under a date/runId prefix */
 async function uploadJsonFilesToS3() {
   const files = fs.readdirSync(tmpDir);
   const date = dayjs().format("YYYY-MM-DD");
@@ -179,77 +182,3 @@ async function uploadJsonFilesToS3() {
     console.log(`>>> Uploaded ${fileName} to s3://random-criterion/${key}`);
   }
 }
-
-// scrape()
-//   .then((data) => {
-//     fs.writeFileSync("./data/filmData.json", JSON.stringify(data, null, 2));
-//     console.log(">>> Done Scraping!");
-//   })
-//   .then(async () => {
-//     // 2. Upload to S3
-//     const s3Client = new S3Client({
-//       region: "us-east-1",
-//     });
-//     const data = fs.readFileSync("./filmData.json");
-
-//     const params = {
-//       Bucket: "random-criterion",
-//       Key: `${dayjs().format("YYYY-MM-DD")}.json`,
-//       Body: data,
-//       ContentType: "application/json",
-//     };
-
-//     try {
-//       await s3Client.send(new PutObjectCommand(params));
-//       console.log(">>> Done uploading to S3!");
-//       s3Client.destroy();
-
-//       return data;
-//     } catch (error) {
-//       console.error("Error uploading to S3:", error);
-//       s3Client.destroy();
-
-//       return error;
-//     }
-//   })
-//   .then(async (file) => {
-//     // 3. Upsert data to DB
-//     const prisma = new PrismaClient();
-//     await prisma.$transaction(async (client) => {
-//       const data: Film[] = JSON.parse(file as string);
-//       await client.films.deleteMany({});
-
-//       await client.films.createMany({
-//         data: data.map((film: Film) => {
-//           return {
-//             title: film.title,
-//             director: film.director,
-//             country: film.country,
-//             year: film.year,
-//             link: film.link,
-//             img_url: film.img_url,
-//             created_at: dayjs().toISOString(),
-//             updated_at: dayjs().toISOString(),
-//           };
-//         }),
-//       });
-//     });
-
-//     console.log(">>> Done updating db!");
-//     await prisma.$disconnect();
-//   })
-//   .then(() => {
-//     // 4. Delete file
-//     fs.unlinkSync("./filmData.json");
-//     console.log(">>> Deleted file!");
-//   })
-//   .finally(async () => {
-//     // 5. Close browser
-//     const browser = await puppeteer.launch();
-//     await browser.close();
-//     console.log(">>> Closed browser!");
-//     process.exit(0);
-//   })
-//   .catch((error) => {
-//     console.error("Error scraping film data:", error);
-//   });
