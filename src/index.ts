@@ -8,6 +8,7 @@ import dayjs from "dayjs";
 import { prisma } from "../prisma/client";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Film, Genre } from "types/films";
+import { Context } from "aws-lambda";
 
 const genres: Genre[] = [
   "all",
@@ -32,17 +33,25 @@ const genres: Genre[] = [
   "western",
 ];
 
-const runId = crypto.randomUUID();
-const tmpDir = path.join(os.tmpdir(), "random-criterion", runId);
-fs.mkdirSync(tmpDir, { recursive: true });
+let runId: string;
+let tmpDir: string;
 
 const s3Client = new S3Client({
   region: "us-east-1",
 });
 let browser: Browser;
 
-puppeteer.launch().then(async (pBrowser) => {
-  browser = pBrowser;
+export const handler = async (_: any, context: Context): Promise<void> => {
+  console.log(`>>> ${context.functionName} HAS BEEN INVOKED`);
+  // End the function immediately after the handler has completed - do not wait for the event loop to be empty
+  context.callbackWaitsForEmptyEventLoop = false;
+
+  runId = crypto.randomUUID();
+  console.info(`>>> SCRAPE IS RUNNING - RUN ID: ${runId}`);
+  tmpDir = path.join(os.tmpdir(), "random-criterion", runId);
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  browser = await puppeteer.launch();
   try {
     await scrape(genres);
     await dropRows();
@@ -51,10 +60,17 @@ puppeteer.launch().then(async (pBrowser) => {
     await uploadJsonFilesToS3();
   } finally {
     s3Client.destroy();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    process.exit(0);
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      console.log(">>> Removed tmpDir", tmpDir);
+    } catch (err: any) {
+      console.error(">>> Failed to remove tmpDir", tmpDir, err?.message || err);
+    }
+    console.log(">>> SCRAPING HAS BEEN COMPLETED - RUN ID:", runId);
+    // Return to let Lambda decide about container reuse
+    return;
   }
-});
+};
 
 async function dropRows() {
   return prisma.films.deleteMany({});
